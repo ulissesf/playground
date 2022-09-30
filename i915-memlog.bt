@@ -24,6 +24,15 @@ tracepoint:i915:i915_gem_object_destroy
 	printf("i915-memlog:%u:%u[%u]:destroy,%p,%s[%u],%d\n", nsecs, pid, tid, args->obj, $rs, $rid, -$size);
 }
 
+kprobe:i915_gem_close_object
+/$1 == 0 || pid == $1/
+{
+	$obj = (struct drm_i915_gem_object *)arg0;
+	$rid = $obj->mm.region->id;
+	$rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
+	printf("i915-memlog:%u:%u[%u]:close,%p,%s[%u],%d\n", nsecs, pid, tid, $obj, $rs, $rid, $obj->base.size);
+}
+
 // NOT TESTED YET: Attempt to track move from/to smem/lmem. Currently:
 //   - only Intel GPUs in the system and only i915 driver loaded.
 //   - assumes struct alignments
