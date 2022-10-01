@@ -7,14 +7,12 @@ lines = open(sys.argv[1]).readlines()
 rlines = list()
 for l in lines:
     rlines.append(l.strip().split(':'))
-rlines.sort(key=lambda it: int(it[1]))
+#rlines.sort(key=lambda it: int(it[1]))
 
 # tracks creation -> move -> deletion and computes tot size
 create = dict()
 destroy = dict()
-closed = dict()
 skipped_d = dict()
-skipped_c = dict()
 tot = 0
 for sl in rlines:
     cmd = sl[3].split(',')
@@ -34,18 +32,15 @@ for sl in rlines:
     elif op == "move":
         print("Not supposed to get moves")
         continue
-    elif op == "close":
-        nc = closed.get(obj, 0)
-        if obj not in create or nc + 1 > create[obj]:
-            print("WRN: closing %s but did not creat it. Skipping." % obj)
-            skipped_c[obj] = skipped_c.get(obj, 0) + 1
-            continue
-        closed[obj] = nc + 1
-        val = 0
+    else:
+        continue
     tot += val
+    if tot < 0:
+        sys.exit("ERR: total memory below zero [%d]" % tot)
     print("%s:%d" % (':'.join(sl), tot))
 
 # obj checks and debug info
+print("------------")
 notdest = 0
 ndest = dict()
 totc = 0
@@ -60,13 +55,12 @@ for k in create:
         ndest[k] = create[k]
     else:
         if create[k] < destroy[k]:
-            print("ERR: different # of create [%d] and destroy [%d] for same %s" % (create[k], destroy[k], k))
+            sys.exit("ERR: different # of create [%d] and destroy [%d] for same %s" % (create[k], destroy[k], k))
         totd += destroy[k]
 for k in destroy:
     if k not in create:
         print("ERR: destroyed %s but never created?!" % k)
-if notdest > 0:
-    print("INF: total created = %d, destroyed = %d (skipped = %d), not destroyed = %d" % (totc, totd, totsk_d, notdest))
 for k in skipped_d:
     if k in create and k in ndest:
         print("INF: skipped obj %s in create but not destroyed, event ordering issue?" % k)
+print("INF: total created = %d, destroyed = %d (skipped = %d), not destroyed = %d" % (totc, totd, totsk_d, notdest))
