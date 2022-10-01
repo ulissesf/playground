@@ -1,36 +1,61 @@
 #!/usr/bin/env -S bpftrace -I ${KSRC}/include -I ${KSRC}/drivers/gpu/drm -I ${KSRC}/drivers/gpu/drm/i915 -I ${KSRC}/drivers/gpu/drm/i915/gem
 
-// Usage: KSRC=<kernel src dir> $0 <pid>
+// Usage: KSRC=<kernel src dir> $0 <pid> <interval in ms>
 
 #define CC_USING_FENTRY
 #include <i915_gem_object.h>  // for struct drm_i915_gem_object
 
+BEGIN
+{
+	@debug = 0;
+}
+
 tracepoint:i915:i915_gem_object_create
-/$1 == 0 || pid == $1/
+/pid == $1/
 {
-	$rid = args->obj->mm.region->id;
-	$rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
+	if (@objs[args->obj] != 0) {
+		printf("ERR[%s]: recreating obj %p without destroying it!\n", probe, args->obj);
+	} else {
+		@start = 1;
+		@objs[args->obj] = args->size;
 
-	printf("i915-memlog:%u:%u[%u]:create,%p,%s[%u],%d\n", nsecs, pid, tid, args->obj, $rs, $rid, args->size);
+		$rid = args->obj->mm.region->id;
+		$rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
+		if ($rs == "smem") {
+			@smem = @smem + args->size;
+		} else {
+			@lmem = @lmem + args->size;
+		}
+
+		if (@debug > 0) {
+			printf("i915-memlog-dbg:%u:%u[%u]:create,%p,%s[%u],%u\n", nsecs, pid, tid, args->obj, $rs, $rid, args->size);
+		}
+	}
 }
 
-tracepoint:i915:i915_gem_object_destroy
-/$1 == 0 || pid == $1/
-{
-	$rid = args->obj->mm.region->id;
-	$rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
-	$size = args->obj->base.size;
-
-	printf("i915-memlog:%u:%u[%u]:destroy,%p,%s[%u],%d\n", nsecs, pid, tid, args->obj, $rs, $rid, -$size);
-}
-
-kprobe:i915_gem_close_object
-/$1 == 0 || pid == $1/
+kprobe:i915_gem_free_object
 {
 	$obj = (struct drm_i915_gem_object *)arg0;
-	$rid = $obj->mm.region->id;
-	$rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
-	printf("i915-memlog:%u:%u[%u]:close,%p,%s[%u],%d\n", nsecs, pid, tid, $obj, $rs, $rid, $obj->base.size);
+	$size = $obj->base.size;
+	if (@objs[$obj] != 0) {
+		if (@objs[$obj] != $size) {
+			printf("ERR[%s]: %p has different size between create [%u] and destroy [%u]!\n", probe, $obj, @objs[$obj], $size);
+		} else {
+			delete(@objs[$obj]);
+
+			$rid = $obj->mm.region->id;
+			$rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
+			if ($rs == "smem") {
+				@smem = @smem - $size;
+			} else {
+				@lmem = @lmem - $size;
+			}
+
+			if (@debug > 0) {
+				printf("i915-memlog-dbg:%u:%u[%u]:destroy,%p,%s[%u],%d\n", nsecs, pid, tid, $obj, $rs, $rid, -$size);
+			}
+		}
+	}
 }
 
 // NOT TESTED YET: Attempt to track move from/to smem/lmem. Currently:
@@ -49,6 +74,20 @@ kprobe:ttm_bo_move_sync_cleanup
 	$drid = "na";
 	$dr = ((struct ttm_resource *)arg1)->mem_type == 0 ? "smem" : "lmem";
 	$size = ((struct ttm_buffer_object *)arg0)->resource->num_pages << 12;
+	printf("i915-memlog-dbg:%u:%u[%u]:move,%p,%s[%u]-%s[%s],%u", nsecs, pid, tid, $obj, $sr, $srid, $dr, $drid, $size);
+}
 
-	printf("i915-memlog:%u:%u[%u]:move,%p,%s[%u]-%s[%s],%d", nsecs, pid, tid, $obj, $sr, $srid, $dr, $drid, $size);
+// TODO: fix move, and add evict, swap
+
+interval:ms:$2
+{
+	if (@start != 0) {
+		if (@prev == 0) {
+			$ts = 0;
+		} else {
+			$ts = elapsed - @prev;
+		}
+		@prev = elapsed;
+		printf("i915-memlog:%u:%u:%u\n", $ts, @smem, @lmem);
+	}
 }
