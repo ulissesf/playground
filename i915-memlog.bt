@@ -59,25 +59,38 @@ kprobe:i915_gem_free_object
 }
 
 // NOT TESTED YET: Attempt to track move from/to smem/lmem. Currently:
-//   - only Intel GPUs in the system and only i915 driver loaded.
+//   - assumes only Intel GPUs in the system and only i915 driver loaded.
 //   - assumes struct alignments
 //   - misses dst mem region ID and assumes move sync happens before gem obj adjustments
-//
-// IOW, needs proper tracepoint(s) in i915.
 
 kprobe:ttm_bo_move_sync_cleanup
-/$1 == 0 || pid == $1/
 {
 	$obj = (struct drm_i915_gem_object *)arg0;
-	$srid = $obj->mm.region->id;
-	$sr = $srid == 0 || $srid == 5 ? "smem" : "lmem";
-	$drid = "na";
-	$dr = ((struct ttm_resource *)arg1)->mem_type == 0 ? "smem" : "lmem";
-	$size = ((struct ttm_buffer_object *)arg0)->resource->num_pages << 12;
-	printf("i915-memlog-dbg:%u:%u[%u]:move,%p,%s[%u]-%s[%s],%u", nsecs, pid, tid, $obj, $sr, $srid, $dr, $drid, $size);
+	if (@objs[$obj] != 0) {
+		$srid = $obj->mm.region->id;
+		$sr = $srid == 0 || $srid == 5 ? "smem" : "lmem";
+		$drid = "na";
+		$dr = ((struct ttm_resource *)arg1)->mem_type == 0 ? "smem" : "lmem";
+		if ($sr != $dr) {
+			$size = ((struct ttm_buffer_object *)arg0)->resource->num_pages << 12;
+			if ($sr == "smem") {
+				@smem = @smem - $size;
+				@lmem = @lmem + $size;
+			} else {
+				@lmem = @lmem - $size;
+				@smem = @smem + $size;
+			}
+
+			if (@debug > 0) {
+				printf("i915-memlog-dbg:%u:%u[%u]:move,%p,%s[%u]-%s[%s],%u", nsecs, pid, tid, $obj, $sr, $srid, $dr, $drid, $size);
+			}
+		}
+	}
 }
 
-// TODO: fix move, and add evict, swap
+// TODO:
+//  - test move, add dst region id
+//  - and add swap, evict?
 
 interval:ms:$2
 {
