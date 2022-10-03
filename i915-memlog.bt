@@ -19,23 +19,17 @@ tracepoint:i915:i915_gem_object_create
 		@start = 1;
 		@objs[args->obj] = args->size;
 
-		$rid = args->obj->mm.region->id;
-		$rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
-		if ($rs == "smem") {
-			@smem = @smem + args->size;
-		} else {
-			@lmem = @lmem + args->size;
-		}
-
 		if (@debug > 0) {
+			$rid = args->obj->mm.region->id;
+			$rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
 			printf("i915-memlog-dbg:%u:%u[%u]:create,%p,%s[%u],%u\n", nsecs, pid, tid, args->obj, $rs, $rid, args->size);
 		}
 	}
 }
 
-kprobe:i915_gem_free_object
+tracepoint:i915:i915_gem_object_destroy
 {
-	$obj = (struct drm_i915_gem_object *)arg0;
+	$obj = args->obj;
 	$size = $obj->base.size;
 	if (@objs[$obj] != 0) {
 		if (@objs[$obj] != $size) {
@@ -43,64 +37,57 @@ kprobe:i915_gem_free_object
 		} else {
 			delete(@objs[$obj]);
 
-			$rid = $obj->mm.region->id;
-			$rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
-			if ($rs == "smem") {
-				@smem = @smem - $size;
-			} else {
-				@lmem = @lmem - $size;
-			}
-
 			if (@debug > 0) {
+				$rid = $obj->mm.region->id;
+				$rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
 				printf("i915-memlog-dbg:%u:%u[%u]:destroy,%p,%s[%u],%d\n", nsecs, pid, tid, $obj, $rs, $rid, -$size);
 			}
 		}
 	}
 }
 
-// NOT TESTED YET: Attempt to track move from/to smem/lmem. Currently:
-//   - assumes only Intel GPUs in the system and only i915 driver loaded.
-//   - assumes struct alignments
-//   - misses dst mem region ID and assumes move sync happens before gem obj adjustments
-
-kprobe:ttm_bo_move_sync_cleanup
+tracepoint:i915:i915_vma_bind
+/@objs[args->obj] != 0/
 {
-	$obj = (struct drm_i915_gem_object *)arg0;
-	if (@objs[$obj] != 0) {
-		$srid = $obj->mm.region->id;
-		$sr = $srid == 0 || $srid == 5 ? "smem" : "lmem";
-		$drid = "na";
-		$dr = ((struct ttm_resource *)arg1)->mem_type == 0 ? "smem" : "lmem";
-		if ($sr != $dr) {
-			$size = ((struct ttm_buffer_object *)arg0)->resource->num_pages << 12;
-			if ($sr == "smem") {
-				@smem = @smem - $size;
-				@lmem = @lmem + $size;
-			} else {
-				@lmem = @lmem - $size;
-				@smem = @smem + $size;
-			}
+	$rid = args->obj->mm.region->id;
+	if ($rid == 0 || $rid == 5) {
+		@smem = @smem + args->size;
+	} else {
+		@lmem = @lmem + args->size;
+	}
 
-			if (@debug > 0) {
-				printf("i915-memlog-dbg:%u:%u[%u]:move,%p,%s[%u]-%s[%s],%u", nsecs, pid, tid, $obj, $sr, $srid, $dr, $drid, $size);
-			}
-		}
+	if (@debug > 0) {
+		$rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
+		printf("i915-memlog-dbg:%u:%u[%u]:vmabind,%p,%s[%u],%u\n", nsecs, pid, tid, args->obj, $rs, $rid, args->size);
 	}
 }
 
-// TODO:
-//  - test move, add dst region id
-//  - and add swap, evict?
+tracepoint:i915:i915_vma_unbind
+/@objs[args->obj] != 0/
+{
+        $rid = args->obj->mm.region->id;
+        if ($rid == 0 || $rid == 5) {
+                @smem = @smem - args->size;
+        } else {
+                @lmem = @lmem - args->size;
+        }
+
+        if (@debug > 0) {
+                $rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
+                printf("i915-memlog-dbg:%u:%u[%u]:vmaunbind,%p,%s[%u],%d\n", nsecs, pid, tid, args->obj, $rs, $rid, -args->size);
+        }
+}
 
 interval:ms:$2
 {
 	if (@start != 0) {
 		if (@prev == 0) {
-			$ts = 0;
+			@acum = 0;
 		} else {
 			$ts = elapsed - @prev;
+			@acum = @acum + (int64) ($ts / 1000000);
 		}
 		@prev = elapsed;
-		printf("i915-memlog:%u:%u:%u\n", $ts, @smem, @lmem);
+		printf("i915-memlog:%u:%u:%u\n", @acum, @smem, @lmem);
 	}
 }
