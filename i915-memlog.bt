@@ -81,13 +81,14 @@ tracepoint:i915:i915_vma_unbind
 interval:ms:$2
 {
 	if (@start != 0) {
+		$now = nsecs;
 		if (@prev == 0) {
 			@acum = 0;
 		} else {
-			$ts = elapsed - @prev;
+			$ts = $now - @prev;
 			@acum = @acum + (int64) ($ts / 1000000);
 		}
-		@prev = elapsed;
 		printf("i915-memlog:%u:%u:%u\n", @acum, @smem, @lmem);
+		@prev = $now;
 	}
 }
