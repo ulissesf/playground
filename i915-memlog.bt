@@ -28,20 +28,19 @@ tracepoint:i915:i915_gem_object_create
 }
 
 tracepoint:i915:i915_gem_object_destroy
+/@objs[args->obj] != 0/
 {
 	$obj = args->obj;
 	$size = $obj->base.size;
-	if (@objs[$obj] != 0) {
-		if (@objs[$obj] != $size) {
-			printf("ERR[%s]: %p has different size between create [%u] and destroy [%u]!\n", probe, $obj, @objs[$obj], $size);
-		} else {
-			delete(@objs[$obj]);
+	if (@objs[$obj] != $size) {
+		printf("ERR[%s]: %p has different size between create [%u] and destroy [%u]!\n", probe, $obj, @objs[$obj], $size);
+	} else {
+		delete(@objs[$obj]);
 
-			if (@debug > 0) {
-				$rid = $obj->mm.region->id;
-				$rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
-				printf("i915-memlog-dbg:%u:%u[%u]:destroy,%p,%s[%u],%d\n", nsecs, pid, tid, $obj, $rs, $rid, -$size);
-			}
+		if (@debug > 0) {
+			$rid = $obj->mm.region->id;
+			$rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
+			printf("i915-memlog-dbg:%u:%u[%u]:destroy,%p,%s[%u],%d\n", nsecs, pid, tid, $obj, $rs, $rid, -$size);
 		}
 	}
 }
@@ -54,6 +53,10 @@ tracepoint:i915:i915_vma_bind
 		@smem = @smem + args->size;
 	} else {
 		@lmem = @lmem + args->size;
+	}
+
+	if (args->size != @objs[args->obj]) {
+		printf("i915-memlog-dbg: different obj [%d] and vma bind [%d] sizes\n", @objs[args->obj], args->size);
 	}
 
 	if (@debug > 0) {
