@@ -80,7 +80,7 @@ tracepoint:i915:i915_vma_unbind
 	$task = (struct task_struct *)curtask;
 	if (pid != $1 && $task->mm != 0) {
 		if (@debug > 0) {
-			printf("INF[%s]: binding from non-kernel thread pid [%u] different than monitored process [%u]\n", probe, pid, $1);
+			printf("INF[%s]: unbinding from non-kernel thread pid [%u] different than monitored process [%u]\n", probe, pid, $1);
 		}
 		return;
 	}
