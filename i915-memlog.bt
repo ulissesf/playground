@@ -3,6 +3,7 @@
 // Usage: KSRC=<kernel src dir> $0 <pid> <interval in ms>
 
 #define CC_USING_FENTRY
+#include <linux/sched.h>      // for struct task_struct
 #include <i915_gem_object.h>  // for struct drm_i915_gem_object
 
 BEGIN
@@ -34,20 +35,28 @@ tracepoint:i915:i915_gem_object_destroy
 	$size = $obj->base.size;
 	if (@objs[$obj] != $size) {
 		printf("ERR[%s]: %p has different size between create [%u] and destroy [%u]!\n", probe, $obj, @objs[$obj], $size);
-	} else {
-		delete(@objs[$obj]);
+	}
 
-		if (@debug > 0) {
-			$rid = $obj->mm.region->id;
-			$rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
-			printf("i915-memlog-dbg:%u:%u[%u]:destroy,%p,%s[%u],%d\n", nsecs, pid, tid, $obj, $rs, $rid, -$size);
-		}
+	delete(@objs[$obj]);
+
+	if (@debug > 0) {
+		$rid = $obj->mm.region->id;
+		$rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
+		printf("i915-memlog-dbg:%u:%u[%u]:destroy,%p,%s[%u],%d\n", nsecs, pid, tid, $obj, $rs, $rid, -$size);
 	}
 }
 
 tracepoint:i915:i915_vma_bind
 /@objs[args->obj] != 0/
 {
+	$task = (struct task_struct *)curtask;
+	if (pid != $1 && $task->mm != 0) {
+		if (@debug > 0) {
+			printf("INF[%s]: binding from non-kernel thread pid [%u] and different than monitored process [%u], ignoring.\n", probe, pid, $1);
+		}
+		return;
+	}
+
 	$rid = args->obj->mm.region->id;
 	if ($rid == 0 || $rid == 5) {
 		@smem = @smem + args->size;
@@ -55,11 +64,11 @@ tracepoint:i915:i915_vma_bind
 		@lmem = @lmem + args->size;
 	}
 
-	if (@debug > 0 && args->size != @objs[args->obj]) {
-		printf("i915-memlog-dbg: different obj [%d] and vma bind [%d] sizes\n", @objs[args->obj], args->size);
-	}
-
 	if (@debug > 0) {
+		if (args->size != @objs[args->obj]) {
+			printf("i915-memlog-dbg: different obj [%d] and vma bind [%d] sizes\n", @objs[args->obj], args->size);
+		}
+
 		$rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
 		printf("i915-memlog-dbg:%u:%u[%u]:vmabind,%p,%s[%u],vm[%p],0x%016llx,%u\n", nsecs, pid, tid, args->obj, $rs, $rid, args->vm, args->offset, args->size);
 	}
@@ -68,6 +77,14 @@ tracepoint:i915:i915_vma_bind
 tracepoint:i915:i915_vma_unbind
 /@objs[args->obj] != 0/
 {
+	$task = (struct task_struct *)curtask;
+	if (pid != $1 && $task->mm != 0) {
+		if (@debug > 0) {
+			printf("INF[%s]: binding from non-kernel thread pid [%u] different than monitored process [%u]\n", probe, pid, $1);
+		}
+		return;
+	}
+
         $rid = args->obj->mm.region->id;
         if ($rid == 0 || $rid == 5) {
                 @smem = @smem - args->size;
