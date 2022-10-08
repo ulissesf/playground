@@ -55,13 +55,13 @@ tracepoint:i915:i915_vma_bind
 		@lmem = @lmem + args->size;
 	}
 
-	if (args->size != @objs[args->obj]) {
+	if (@debug > 0 && args->size != @objs[args->obj]) {
 		printf("i915-memlog-dbg: different obj [%d] and vma bind [%d] sizes\n", @objs[args->obj], args->size);
 	}
 
 	if (@debug > 0) {
 		$rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
-		printf("i915-memlog-dbg:%u:%u[%u]:vmabind,%p,%s[%u],%u\n", nsecs, pid, tid, args->obj, $rs, $rid, args->size);
+		printf("i915-memlog-dbg:%u:%u[%u]:vmabind,%p,%s[%u],vm[%p],0x%016llx,%u\n", nsecs, pid, tid, args->obj, $rs, $rid, args->vm, args->offset, args->size);
 	}
 }
 
@@ -77,7 +77,7 @@ tracepoint:i915:i915_vma_unbind
 
         if (@debug > 0) {
                 $rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
-                printf("i915-memlog-dbg:%u:%u[%u]:vmaunbind,%p,%s[%u],%d\n", nsecs, pid, tid, args->obj, $rs, $rid, -args->size);
+                printf("i915-memlog-dbg:%u:%u[%u]:vmaunbind,%p,%s[%u],vm[%p],0x%016llx,%d\n", nsecs, pid, tid, args->obj, $rs, $rid, args->vm, args->offset, -args->size);
         }
 }
 
