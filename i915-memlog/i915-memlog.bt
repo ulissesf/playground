@@ -70,7 +70,13 @@ tracepoint:i915:i915_vma_bind
 		}
 
 		$rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
-		printf("i915-memlog-dbg:%u:%u[%u]:vmabind,%p,%s[%u],vm[%p],0x%016llx,%u\n", nsecs, pid, tid, args->obj, $rs, $rid, args->vm, args->offset, args->size);
+		$vm = "ppgtt";
+		if (args->vm->is_ggtt) {
+			$vm = "ggtt";
+		} else if (args->vm->is_dpt) {
+			$vm = "dpt";
+		}
+		printf("i915-memlog-dbg:%u:%u[%u]:vmabind,%p,%s[%u],vm[%p][%s],0x%016llx,%u\n", nsecs, pid, tid, args->obj, $rs, $rid, args->vm, $vm, args->offset, args->size);
 	}
 }
 
@@ -94,7 +100,13 @@ tracepoint:i915:i915_vma_unbind
 
         if (@debug > 0) {
                 $rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
-                printf("i915-memlog-dbg:%u:%u[%u]:vmaunbind,%p,%s[%u],vm[%p],0x%016llx,%d\n", nsecs, pid, tid, args->obj, $rs, $rid, args->vm, args->offset, -args->size);
+                $vm = "ppgtt";
+                if (args->vm->is_ggtt) {
+                        $vm = "ggtt";
+                } else if (args->vm->is_dpt) {
+                        $vm = "dpt";
+                }
+                printf("i915-memlog-dbg:%u:%u[%u]:vmaunbind,%p,%s[%u],vm[%p][%s],0x%016llx,%d\n", nsecs, pid, tid, args->obj, $rs, $rid, args->vm, $vm, args->offset, -args->size);
         }
 }
 
