@@ -63,6 +63,7 @@ tracepoint:i915:i915_vma_bind
 	} else {
 		@lmem = @lmem + args->size;
 	}
+	@binds[args->obj, args->vm, args->offset, args->size] = pid;
 
 	if (@debug > 0) {
 		if (args->size != @objs[args->obj]) {
@@ -81,7 +82,7 @@ tracepoint:i915:i915_vma_bind
 }
 
 tracepoint:i915:i915_vma_unbind
-/@objs[args->obj] != 0/
+/@binds[args->obj, args->vm, args->offset, args->size] != 0/
 {
 	$task = (struct task_struct *)curtask;
 	if (pid != $1 && $task->mm != 0) {
@@ -91,6 +92,7 @@ tracepoint:i915:i915_vma_unbind
 		return;
 	}
 
+        delete(@binds[args->obj, args->vm, args->offset, args->size]);
         $rid = args->obj->mm.region->id;
         if ($rid == 0 || $rid == 5) {
                 @smem = @smem - args->size;
