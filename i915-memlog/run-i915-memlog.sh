@@ -9,7 +9,7 @@ function run_child()
 
 run_child >& /dev/null &
 chid=$!
-KSRC=./rpmbuild/SOURCES/linux-5.19.8 ./i915-memlog.bt $! 10 &
+KSRC=./linux-tree ./i915-memlog.bt $! 10 &
 wait $chid
 sleep 10
 kill $!

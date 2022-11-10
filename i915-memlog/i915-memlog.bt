@@ -23,7 +23,7 @@ tracepoint:i915:i915_gem_object_create
 		if (@debug > 0) {
 			$rid = args->obj->mm.region->id;
 			$rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
-			printf("i915-memlog-dbg:%u:%u[%u]:create,%p,%s[%u],%u\n", nsecs, pid, tid, args->obj, $rs, $rid, args->size);
+			printf("i915-memlog-dbg:%llu:%u[%u]:create,%p,%s[%u],%llu\n", nsecs, pid, tid, args->obj, $rs, $rid, args->size);
 		}
 	}
 }
@@ -34,7 +34,7 @@ tracepoint:i915:i915_gem_object_destroy
 	$obj = args->obj;
 	$size = $obj->base.size;
 	if (@objs[$obj] != $size) {
-		printf("ERR[%s]: %p has different size between create [%u] and destroy [%u]!\n", probe, $obj, @objs[$obj], $size);
+		printf("ERR[%s]: %p has different size between create [%llu] and destroy [%llu]!\n", probe, $obj, @objs[$obj], $size);
 	}
 
 	delete(@objs[$obj]);
@@ -42,7 +42,7 @@ tracepoint:i915:i915_gem_object_destroy
 	if (@debug > 0) {
 		$rid = $obj->mm.region->id;
 		$rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
-		printf("i915-memlog-dbg:%u:%u[%u]:destroy,%p,%s[%u],%u\n", nsecs, pid, tid, $obj, $rs, $rid, $size);
+		printf("i915-memlog-dbg:%llu:%u[%u]:destroy,%p,%s[%u],%llu\n", nsecs, pid, tid, $obj, $rs, $rid, $size);
 	}
 }
 
@@ -52,7 +52,7 @@ tracepoint:i915:i915_vma_bind
 	$task = (struct task_struct *)curtask;
 	if (pid != $1 && $task->mm != 0) {
 		if (@debug > 0) {
-			printf("INF[%s]: binding from non-kernel thread pid [%u] different than monitored process [%u], ignoring evt obj[%p],vm[%p],0x%016llx,%u\n", probe, pid, $1, args->obj, args->vm, args->offset, args->size);
+			printf("INF[%s]: binding from non-kernel thread pid [%u] different than monitored process [%u], ignoring evt obj[%p],vm[%p],0x%016llx,%llu\n", probe, pid, $1, args->obj, args->vm, args->offset, args->size);
 		}
 		return;
 	}
@@ -67,7 +67,7 @@ tracepoint:i915:i915_vma_bind
 
 	if (@debug > 0) {
 		if (args->size != @objs[args->obj]) {
-			printf("INF[%s]: different obj [%d] and vma bind [%d] sizes\n", probe, @objs[args->obj], args->size);
+			printf("INF[%s]: different obj [%llu] and vma bind [%llu] sizes\n", probe, @objs[args->obj], args->size);
 		}
 
 		$rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
@@ -77,7 +77,7 @@ tracepoint:i915:i915_vma_bind
 		} else if (args->vm->is_dpt) {
 			$vm = "dpt";
 		}
-		printf("i915-memlog-dbg:%u:%u[%u]:vmabind,%p,%s[%u],vm[%p][%s],0x%016llx,%u\n", nsecs, pid, tid, args->obj, $rs, $rid, args->vm, $vm, args->offset, args->size);
+		printf("i915-memlog-dbg:%llu:%u[%u]:vmabind,%p,%s[%u],vm[%p][%s],0x%016llx,%llu\n", nsecs, pid, tid, args->obj, $rs, $rid, args->vm, $vm, args->offset, args->size);
 	}
 }
 
@@ -87,7 +87,7 @@ tracepoint:i915:i915_vma_unbind
 	$task = (struct task_struct *)curtask;
 	if (pid != $1 && $task->mm != 0) {
 		if (@debug > 0) {
-			printf("INF[%s]: unbinding from non-kernel thread pid [%u] different than monitored process [%u], ignoring evt obj[%p],vm[%p],0x%016llx,%u\n", probe, pid, $1, args->obj, args->vm, args->offset, args->size);
+			printf("INF[%s]: unbinding from non-kernel thread pid [%u] different than monitored process [%u], ignoring evt obj[%p],vm[%p],0x%016llx,%llu\n", probe, pid, $1, args->obj, args->vm, args->offset, args->size);
 		}
 		return;
 	}
@@ -108,35 +108,35 @@ tracepoint:i915:i915_vma_unbind
                 } else if (args->vm->is_dpt) {
                         $vm = "dpt";
                 }
-                printf("i915-memlog-dbg:%u:%u[%u]:vmaunbind,%p,%s[%u],vm[%p][%s],0x%016llx,%u\n", nsecs, pid, tid, args->obj, $rs, $rid, args->vm, $vm, args->offset, args->size);
+                printf("i915-memlog-dbg:%llu:%u[%u]:vmaunbind,%p,%s[%u],vm[%p][%s],0x%016llx,%llu\n", nsecs, pid, tid, args->obj, $rs, $rid, args->vm, $vm, args->offset, args->size);
         }
 }
 
 tracepoint:i915:i915_context_create
 /pid == $1/
 {
-	printf("i915-memlog-dbg:%u:%u[%u]:ctx_create,%u,%p,%p\n", nsecs, pid, tid, args->dev, args->ctx, args->vm);
+	printf("i915-memlog-dbg:%llu:%u[%u]:ctx_create,%u,%p,%p\n", nsecs, pid, tid, args->dev, args->ctx, args->vm);
 	@ctxts[args->ctx] = args->vm;
 }
 
 tracepoint:i915:i915_context_free
 /@ctxts[args->ctx] != 0/
 {
-	printf("i915-memlog-dbg:%u:%u[%u]:ctx_free,%u,%p,%p\n", nsecs, pid, tid, args->dev, args->ctx, args->vm);
+	printf("i915-memlog-dbg:%llu:%u[%u]:ctx_free,%u,%p,%p\n", nsecs, pid, tid, args->dev, args->ctx, args->vm);
 	delete(@ctxts[args->ctx]);
 }
 
 tracepoint:i915:i915_ppgtt_create
 /pid == $1/
 {
-	printf("i915-memlog-dbg:%u:%u[%u]:ppgtt_create,%u,%p\n", nsecs, pid, tid, args->dev, args->vm);
+	printf("i915-memlog-dbg:%llu:%u[%u]:ppgtt_create,%u,%p\n", nsecs, pid, tid, args->dev, args->vm);
 	@ppgtts[args->vm] = args->dev + 1;
 }
 
 tracepoint:i915:i915_ppgtt_release
 /@ppgtts[args->vm] != 0/
 {
-	printf("i915-memlog-dbg:%u:%u[%u]:ppgtt_release,%u,%p\n", nsecs, pid, tid, args->dev, args->vm);
+	printf("i915-memlog-dbg:%llu:%u[%u]:ppgtt_release,%u,%p\n", nsecs, pid, tid, args->dev, args->vm);
 	delete(@ppgtts[args->vm]);
 }
 
@@ -150,7 +150,7 @@ interval:ms:$2
 			$ts = $now - @prev;
 			@acum = @acum + (int64) ($ts / 1000000);
 		}
-		printf("i915-memlog:%u:%u:%u\n", @acum, @smem, @lmem);
+		printf("i915-memlog:%llu:%llu:%llu\n", @acum, @smem, @lmem);
 		@prev = $now;
 	}
 }
