@@ -9,6 +9,7 @@
 BEGIN
 {
 	@debug = 0;
+	printf("i915-memlog,time (ms),smem (bytes),lmem (bytes)\n");
 }
 
 tracepoint:i915:i915_gem_object_create
@@ -17,7 +18,6 @@ tracepoint:i915:i915_gem_object_create
 	if (@objs[args->obj] != 0) {
 		printf("ERR[%s]: recreating obj %p without destroying it!\n", probe, args->obj);
 	} else {
-		@start = 1;
 		@objs[args->obj] = args->size;
 
 		if (@debug > 0) {
@@ -150,15 +150,13 @@ tracepoint:i915:i915_ppgtt_release
 
 interval:ms:$2
 {
-	if (@start != 0) {
-		$now = nsecs;
-		if (@prev == 0) {
-			@acum = 0;
-		} else {
-			$ts = $now - @prev;
-			@acum = @acum + (int64) ($ts / 1000000);
-		}
-		printf("i915-memlog:%llu:%llu:%llu\n", @acum, @smem, @lmem);
-		@prev = $now;
+	$now = nsecs;
+	if (@prev == 0) {
+		@acum = 0;
+	} else {
+		$ts = $now - @prev;
+		@acum = @acum + (int64) ($ts / 1000000);
 	}
+	printf("i915-memlog,%llu,%llu,%llu\n", @acum, @smem, @lmem);
+	@prev = $now;
 }
