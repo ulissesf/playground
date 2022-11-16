@@ -115,28 +115,36 @@ tracepoint:i915:i915_vma_unbind
 tracepoint:i915:i915_context_create
 /pid == $1/
 {
-	printf("i915-memlog-dbg:%llu:%u[%u]:ctx_create,%u,%p,%p\n", nsecs, pid, tid, args->dev, args->ctx, args->vm);
+	if (@debug > 0) {
+		printf("i915-memlog-dbg:%llu:%u[%u]:ctx_create,%u,%p,%p\n", nsecs, pid, tid, args->dev, args->ctx, args->vm);
+	}
 	@ctxts[args->ctx] = args->vm;
 }
 
 tracepoint:i915:i915_context_free
 /@ctxts[args->ctx] != 0/
 {
-	printf("i915-memlog-dbg:%llu:%u[%u]:ctx_free,%u,%p,%p\n", nsecs, pid, tid, args->dev, args->ctx, args->vm);
+	if (@debug > 0) {
+		printf("i915-memlog-dbg:%llu:%u[%u]:ctx_free,%u,%p,%p\n", nsecs, pid, tid, args->dev, args->ctx, args->vm);
+	}
 	delete(@ctxts[args->ctx]);
 }
 
 tracepoint:i915:i915_ppgtt_create
 /pid == $1/
 {
-	printf("i915-memlog-dbg:%llu:%u[%u]:ppgtt_create,%u,%p\n", nsecs, pid, tid, args->dev, args->vm);
+	if (@debug > 0) {
+		printf("i915-memlog-dbg:%llu:%u[%u]:ppgtt_create,%u,%p\n", nsecs, pid, tid, args->dev, args->vm);
+	}
 	@ppgtts[args->vm] = args->dev + 1;
 }
 
 tracepoint:i915:i915_ppgtt_release
 /@ppgtts[args->vm] != 0/
 {
-	printf("i915-memlog-dbg:%llu:%u[%u]:ppgtt_release,%u,%p\n", nsecs, pid, tid, args->dev, args->vm);
+	if (@debug > 0) {
+		printf("i915-memlog-dbg:%llu:%u[%u]:ppgtt_release,%u,%p\n", nsecs, pid, tid, args->dev, args->vm);
+	}
 	delete(@ppgtts[args->vm]);
 }
 
