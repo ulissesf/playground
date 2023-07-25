@@ -9,21 +9,25 @@
 BEGIN
 {
 	@debug = 0;
+	@userptrs = 0;
 	printf("i915-memlog,time (ms),smem (bytes),lmem (bytes)\n");
 }
 
-tracepoint:i915:i915_gem_object_create
+kprobe:i915_gem_object_init
 /pid == $1/
 {
-	if (@objs[args->obj] != 0) {
-		printf("ERR[%s]: recreating obj %p without destroying it!\n", probe, args->obj);
+	$obj = (struct drm_i915_gem_object *)arg0;
+	$size = $obj->base.size;
+
+	if (@objs[$obj] != 0) {
+		printf("ERR[%s]: recreating obj %p without destroying it!\n", probe, $obj);
 	} else {
-		@objs[args->obj] = args->size;
+		@objs[$obj] = $size;
 
 		if (@debug > 0) {
-			$rid = args->obj->mm.region->id;
+			$rid = $obj->mm.region->id;
 			$rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
-			printf("i915-memlog-dbg:%llu:%u[%u]:create,%p,%s[%u],%llu\n", nsecs, pid, tid, args->obj, $rs, $rid, args->size);
+			printf("i915-memlog-dbg:%llu:%u[%u]:create,%p,%s[%u],%llu\n", nsecs, pid, tid, $obj, $rs, $rid, $size);
 		}
 	}
 }
@@ -51,10 +55,12 @@ tracepoint:i915:i915_vma_bind
 {
 	$task = (struct task_struct *)curtask;
 	if (pid != $1 && $task->mm != 0) {
-		if (@debug > 0) {
-			printf("INF[%s]: binding from non-kernel thread pid [%u] different than monitored process [%u], ignoring evt obj[%p],vm[%p],0x%016llx,%llu\n", probe, pid, $1, args->obj, args->vm, args->offset, args->size);
-		}
+		printf("INF[%s]: binding from non-kernel thread pid [%u] different than monitored process [%u], ignoring evt obj[%p],vm[%p],0x%016llx,%llu\n", probe, pid, $1, args->obj, args->vm, args->offset, args->size);
 		return;
+	}
+
+	if (args->obj->userptr.notifier.mm != 0) {
+		@userptrs = @userptrs + 1;
 	}
 
 	$rid = args->obj->mm.region->id;
@@ -86,9 +92,7 @@ tracepoint:i915:i915_vma_unbind
 {
 	$task = (struct task_struct *)curtask;
 	if (pid != $1 && $task->mm != 0) {
-		if (@debug > 0) {
-			printf("INF[%s]: unbinding from non-kernel thread pid [%u] different than monitored process [%u], ignoring evt obj[%p],vm[%p],0x%016llx,%llu\n", probe, pid, $1, args->obj, args->vm, args->offset, args->size);
-		}
+		printf("INF[%s]: unbinding from non-kernel thread pid [%u] different than monitored process [%u], ignoring evt obj[%p],vm[%p],0x%016llx,%llu\n", probe, pid, $1, args->obj, args->vm, args->offset, args->size);
 		return;
 	}
 
