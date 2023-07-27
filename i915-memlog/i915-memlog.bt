@@ -59,8 +59,9 @@ tracepoint:i915:i915_vma_bind
 		return;
 	}
 
-	if (args->obj->userptr.notifier.mm != 0) {
+	if (@debug > 0 && args->obj->userptr.notifier.mm != 0) {
 		@userptrs = @userptrs + 1;
+		printf("i915-memlog-dbg:userptr[%d],%p,%llu\n", @userptrs, args->obj, args->size);
 	}
 
 	$rid = args->obj->mm.region->id;
