@@ -27,7 +27,7 @@ kprobe:i915_gem_object_init
 		if (@debug > 0) {
 			$rid = $obj->mm.region->id;
 			$rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
-			printf("i915-memlog-dbg:%llu:%u[%u]:create,%p,%s[%u],%llu\n", nsecs, pid, tid, $obj, $rs, $rid, $size);
+			printf("i915-memlog-dbg:%llu:%u[%u]:init,%p,%s[%u],%llu\n", nsecs, pid, tid, $obj, $rs, $rid, $size);
 		}
 	}
 }
@@ -38,7 +38,7 @@ tracepoint:i915:i915_gem_object_destroy
 	$obj = args->obj;
 	$size = $obj->base.size;
 	if (@objs[$obj] != $size) {
-		printf("ERR[%s]: %p has different size between create [%llu] and destroy [%llu]!\n", probe, $obj, @objs[$obj], $size);
+		printf("ERR[%s]: %p has different size between init [%llu] and destroy [%llu]!\n", probe, $obj, @objs[$obj], $size);
 	}
 
 	delete(@objs[$obj]);
