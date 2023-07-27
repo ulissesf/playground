@@ -32,6 +32,19 @@ kprobe:i915_gem_object_init
 	}
 }
 
+kprobe:i915_gem_object_free
+/@objs[(struct drm_i915_gem_object *)arg0] != 0/
+{
+	$obj = (struct drm_i915_gem_object *)arg0;
+	delete(@objs[$obj]);
+
+        if (@debug > 0) {
+                $rid = $obj->mm.region->id;
+                $rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
+                printf("i915-memlog-dbg:%llu:%u[%u]:free,%p,%s[%u],%llu\n", nsecs, pid, tid, $obj, $rs, $rid, $obj->base.size);
+        }
+}
+
 tracepoint:i915:i915_gem_object_destroy
 /@objs[args->obj] != 0/
 {
