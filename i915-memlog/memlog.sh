@@ -2,6 +2,7 @@
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 EXE_CONT=/tmp/exe_cont
+EXE_OUTPUT=/tmp/exe_output
 
 if [[ -z "${KSRC}" ]]; then
     echo Error: Requires KSRC env var to be set to kernel source
@@ -33,7 +34,7 @@ if [ ! -p $EXE_CONT ]; then
 fi
 
 echo MEMLOG: "$@"
-run_exe "$@" >& /dev/null &
+run_exe "$@" >& $EXE_OUTPUT &
 exe_pid=$!
 
 echo MEMLOG: Attaching probes...
@@ -41,6 +42,10 @@ run_memlog $exe_pid &
 memlog_pid=$!
 
 wait $exe_pid
+if [ $? != 0 ]; then
+	echo "MEMLOG: ERROR running $@:"
+	cat $EXE_OUTPUT
+fi
 sleep 1
 sudo kill $memlog_pid
-rm $EXE_CONT
+rm $EXE_CONT $EXE_OUTPUT
