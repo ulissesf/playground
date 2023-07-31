@@ -10,30 +10,49 @@ BEGIN
 {
 	@debug = 0;
 	@userptrs = 0;
+	@pids[$1] = $1;
 	printf("i915-memlog,time (ms),smem (bytes),lmem (bytes)\n");
 }
 
+// Tracking process <pid> and all its children
+
+tracepoint:sched:sched_process_fork
+/@pids[pid]/
+{
+	$cpid = (uint64)args->child_pid;
+	@pids[$cpid] = pid;
+}
+
+tracepoint:sched:sched_process_exit
+/@pids[(uint64)args->pid]/
+{
+	$pid = (uint64)args->pid;
+	delete(@pids[$pid]);
+}
+
+// Tracking mem usage for <pid> and all its children
+
 kprobe:i915_gem_object_init
-/pid == $1/
+/@pids[pid]/
 {
 	$obj = (struct drm_i915_gem_object *)arg0;
 	$size = $obj->base.size;
 
-	if (@objs[$obj] != 0) {
-		printf("ERR[%s]: recreating obj %p without destroying it!\n", probe, $obj);
+	if (@objs[$obj]) {
+		printf("ERR[%s]: recreating obj %p (pid %llu) without destroying it!\n", probe, $obj, pid);
 	} else {
 		@objs[$obj] = $size;
 
 		if (@debug > 0) {
 			$rid = $obj->mm.region->id;
 			$rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
-			printf("i915-memlog-dbg:%llu:%u[%u]:init,%p,%s[%u],%llu\n", nsecs, pid, tid, $obj, $rs, $rid, $size);
+			printf("i915-memlog-dbg:%llu:%llu[%llu]:init,%p,%s[%u],%llu\n", nsecs, pid, tid, $obj, $rs, $rid, $size);
 		}
 	}
 }
 
 kprobe:i915_gem_object_free
-/@objs[(struct drm_i915_gem_object *)arg0] != 0/
+/@objs[(struct drm_i915_gem_object *)arg0]/
 {
 	$obj = (struct drm_i915_gem_object *)arg0;
 	delete(@objs[$obj]);
@@ -41,12 +60,12 @@ kprobe:i915_gem_object_free
         if (@debug > 0) {
                 $rid = $obj->mm.region->id;
                 $rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
-                printf("i915-memlog-dbg:%llu:%u[%u]:free,%p,%s[%u],%llu\n", nsecs, pid, tid, $obj, $rs, $rid, $obj->base.size);
+                printf("i915-memlog-dbg:%llu:%llu[%llu]:free,%p,%s[%u],%llu\n", nsecs, pid, tid, $obj, $rs, $rid, $obj->base.size);
         }
 }
 
 tracepoint:i915:i915_gem_object_destroy
-/@objs[args->obj] != 0/
+/@objs[args->obj]/
 {
 	$obj = args->obj;
 	$size = $obj->base.size;
@@ -59,22 +78,24 @@ tracepoint:i915:i915_gem_object_destroy
 	if (@debug > 0) {
 		$rid = $obj->mm.region->id;
 		$rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
-		printf("i915-memlog-dbg:%llu:%u[%u]:destroy,%p,%s[%u],%llu\n", nsecs, pid, tid, $obj, $rs, $rid, $size);
+		printf("i915-memlog-dbg:%llu:%llu[%llu]:destroy,%p,%s[%u],%llu\n", nsecs, pid, tid, $obj, $rs, $rid, $size);
 	}
 }
 
 tracepoint:i915:i915_vma_bind
-/@objs[args->obj] != 0/
+/@objs[args->obj]/
 {
 	$task = (struct task_struct *)curtask;
-	if (pid != $1 && $task->mm != 0) {
-		printf("INF[%s]: binding from non-kernel thread pid [%u] different than monitored process [%u], ignoring evt obj[%p],vm[%p],0x%016llx,%llu\n", probe, pid, $1, args->obj, args->vm, args->offset, args->size);
+	if (!@pids[pid] && $task->mm != 0) {
+		if (@debug > 0) {
+			printf("INF[%s]: binding from non-kernel thread pid [%u] different than any monitored process, ignoring evt obj[%p],vm[%p],0x%016llx,%llu\n", probe, pid, args->obj, args->vm, args->offset, args->size);
+		}
 		return;
 	}
 
 	if (@debug > 0 && args->obj->userptr.notifier.mm != 0) {
 		@userptrs = @userptrs + 1;
-		printf("i915-memlog-dbg:userptr[%d],%p,%llu\n", @userptrs, args->obj, args->size);
+		printf("i915-memlog-dbg:userptr[%llu],%p,%llu\n", @userptrs, args->obj, args->size);
 	}
 
 	$rid = args->obj->mm.region->id;
@@ -97,16 +118,18 @@ tracepoint:i915:i915_vma_bind
 		} else if (args->vm->is_dpt) {
 			$vm = "dpt";
 		}
-		printf("i915-memlog-dbg:%llu:%u[%u]:vmabind,%p,%s[%u],vm[%p][%s],0x%016llx,%llu\n", nsecs, pid, tid, args->obj, $rs, $rid, args->vm, $vm, args->offset, args->size);
+		printf("i915-memlog-dbg:%llu:%llu[%llu]:vmabind,%p,%s[%u],vm[%p][%s],0x%016llx,%llu\n", nsecs, pid, tid, args->obj, $rs, $rid, args->vm, $vm, args->offset, args->size);
 	}
 }
 
 tracepoint:i915:i915_vma_unbind
-/@binds[args->obj, args->vm, args->offset, args->size] != 0/
+/@binds[args->obj, args->vm, args->offset, args->size]/
 {
 	$task = (struct task_struct *)curtask;
-	if (pid != $1 && $task->mm != 0) {
-		printf("INF[%s]: unbinding from non-kernel thread pid [%u] different than monitored process [%u], ignoring evt obj[%p],vm[%p],0x%016llx,%llu\n", probe, pid, $1, args->obj, args->vm, args->offset, args->size);
+	if (!@pids[pid] && $task->mm != 0) {
+		if (@debug > 0) {
+			printf("INF[%s]: unbinding from non-kernel thread pid [%u] different than any monitored process, ignoring evt obj[%p],vm[%p],0x%016llx,%llu\n", probe, pid, args->obj, args->vm, args->offset, args->size);
+		}
 		return;
 	}
 
@@ -126,7 +149,7 @@ tracepoint:i915:i915_vma_unbind
                 } else if (args->vm->is_dpt) {
                         $vm = "dpt";
                 }
-                printf("i915-memlog-dbg:%llu:%u[%u]:vmaunbind,%p,%s[%u],vm[%p][%s],0x%016llx,%llu\n", nsecs, pid, tid, args->obj, $rs, $rid, args->vm, $vm, args->offset, args->size);
+                printf("i915-memlog-dbg:%llu:%llu[%llu]:vmaunbind,%p,%s[%u],vm[%p][%s],0x%016llx,%llu\n", nsecs, pid, tid, args->obj, $rs, $rid, args->vm, $vm, args->offset, args->size);
         }
 }
 
