@@ -2,7 +2,7 @@
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 EXE_CONT=/tmp/exe_cont
-EXE_OUTPUT=/tmp/exe_output
+EXE_OUTPUT=$(mktemp)
 
 if [[ -z "${KSRC}" ]]; then
     echo Error: Requires KSRC env var to be set to kernel source
