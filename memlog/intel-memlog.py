@@ -186,6 +186,7 @@ while os.path.isdir("/proc/%s" % base_pid):
     pid_list = [base_pid,]
     drv_mem_stats = dict()
 
+    fdinfo_data = dict()
     while idx < len(pid_list):
         pid = pid_list[idx]
         idx += 1
@@ -209,7 +210,6 @@ while os.path.isdir("/proc/%s" % base_pid):
         if not os.path.isdir(fdinfo_dir):
             continue
 
-        fdinfo_data = dict()
         with os.scandir(fdinfo_dir) as it:
             for et in it:
                 fd = "%s/fd/%s" % (pid_dir, et.name)
@@ -225,14 +225,14 @@ while os.path.isdir("/proc/%s" % base_pid):
                 if info is not None and (minor, info.id) not in fdinfo_data:
                     fdinfo_data[(minor, info.id)] = info
 
-        for fdinfo in fdinfo_data.values():
-            drv = fdinfo.driver
-            if not drv in drv_mem_stats:
-                drv_stats = DriverMemStats(drv)
-                drv_mem_stats[drv] = drv_stats
-            else:
-                drv_stats = drv_mem_stats[drv]
-            drv_stats.acum_fdinfo_data(fdinfo)
+    for fdinfo in fdinfo_data.values():
+        drv = fdinfo.driver
+        if not drv in drv_mem_stats:
+            drv_stats = DriverMemStats(drv)
+            drv_mem_stats[drv] = drv_stats
+        else:
+            drv_stats = drv_mem_stats[drv]
+        drv_stats.acum_fdinfo_data(fdinfo)
 
     cur_time = time.monotonic_ns()
     acum_ms += (cur_time - last_time) / 1000000
