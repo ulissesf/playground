@@ -2,33 +2,32 @@
 struct A;
 
 #[derive(Debug)]
-struct B<'a> {
-    refa: &'a A,
+struct B<'b> {
+    refa: &'b A,
 }
 
 impl B<'_>
 {
-    pub fn new_b<'a>(ra: &'a A) -> B<'a>
+    pub fn new_b<'b>(ra: &'b A) -> B<'b>
     {
         B { refa: ra }
     }
 }
 
 #[derive(Debug)]
-struct C<'c> {
+struct C<'b> {
     name: String,
-    vecb: Vec<B<'c>>,
+    vecb: Vec<B<'b>>,
 }
 
-impl C<'_>
+impl<'b> C<'b>
 {
-    pub fn new_c<'a,'b>(n: &'a str) -> C<'b>
+    pub fn new_c<'a>(n: &'a str) -> C<'b>
     {
         C { name: n.to_string().clone(), vecb: Vec::new() }
     }
 
-    pub fn populate_vecb<'a,'b>(&'a mut self, veca: &'b Vec<A>)
-        where 'b: 'a
+    pub fn populate_vecb<'a>(&'a mut self, veca: &'b Vec<A>)
     {
         for _ in 0..4 {
             let newb = B::new_b(&veca[0]);
@@ -36,8 +35,7 @@ impl C<'_>
         }
     }
 
-    pub fn get_vecc<'a,'b>(veca: &'b Vec<A>) -> Vec<C<'a>>
-        where 'b: 'a
+    pub fn get_vecc(veca: &'b Vec<A>) -> Vec<C<'b>>
     {
         let mut vecc: Vec<C> = Vec::new();
 
