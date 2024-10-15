@@ -1,0 +1,167 @@
+#!/usr/bin/env -S bpftrace -I ${KSRC}/include -I ${KSRC}/drivers/gpu/drm -I ${KSRC}/drivers/gpu/drm/i915 -I ${KSRC}/drivers/gpu/drm/i915/gem
+
+// Usage: KSRC=<kernel src dir> $0 <pid> <interval in ms>
+
+#define CC_USING_FENTRY
+#include <linux/sched.h>      // for struct task_struct
+#include <i915_gem_object.h>  // for struct drm_i915_gem_object
+
+BEGIN
+{
+	@debug = 0;
+	@userptrs = 0;
+	@pids[$1] = $1;
+	printf("i915-memlog,time (ms),smem (bytes),lmem (bytes)\n");
+}
+
+// Tracking process <pid> and all its children
+
+tracepoint:sched:sched_process_fork
+/@pids[pid]/
+{
+	$cpid = (uint64)args->child_pid;
+	@pids[$cpid] = pid;
+}
+
+tracepoint:sched:sched_process_exit
+/@pids[(uint64)args->pid]/
+{
+	$pid = (uint64)args->pid;
+	delete(@pids[$pid]);
+}
+
+// Tracking mem usage for <pid> and all its children
+
+kprobe:i915_gem_object_init
+/@pids[pid]/
+{
+	$obj = (struct drm_i915_gem_object *)arg0;
+	$size = $obj->base.size;
+
+	if (@objs[$obj]) {
+		printf("ERR[%s]: recreating obj %p (pid %llu) without destroying it!\n", probe, $obj, pid);
+	} else {
+		@objs[$obj] = $size;
+
+		if (@debug > 0) {
+			$rid = $obj->mm.region->id;
+			$rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
+			printf("i915-memlog-dbg:%llu:%llu[%llu]:init,%p,%s[%u],%llu\n", nsecs, pid, tid, $obj, $rs, $rid, $size);
+		}
+	}
+}
+
+kprobe:i915_gem_object_free
+/@objs[(struct drm_i915_gem_object *)arg0]/
+{
+	$obj = (struct drm_i915_gem_object *)arg0;
+	delete(@objs[$obj]);
+
+        if (@debug > 0) {
+                $rid = $obj->mm.region->id;
+                $rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
+                printf("i915-memlog-dbg:%llu:%llu[%llu]:free,%p,%s[%u],%llu\n", nsecs, pid, tid, $obj, $rs, $rid, $obj->base.size);
+        }
+}
+
+tracepoint:i915:i915_gem_object_destroy
+/@objs[args->obj]/
+{
+	$obj = args->obj;
+	$size = $obj->base.size;
+	if (@objs[$obj] != $size) {
+		printf("ERR[%s]: %p has different size between init [%llu] and destroy [%llu]!\n", probe, $obj, @objs[$obj], $size);
+	}
+
+	delete(@objs[$obj]);
+
+	if (@debug > 0) {
+		$rid = $obj->mm.region->id;
+		$rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
+		printf("i915-memlog-dbg:%llu:%llu[%llu]:destroy,%p,%s[%u],%llu\n", nsecs, pid, tid, $obj, $rs, $rid, $size);
+	}
+}
+
+tracepoint:i915:i915_vma_bind
+/@objs[args->obj]/
+{
+	$task = (struct task_struct *)curtask;
+	if (!@pids[pid] && $task->mm != 0) {
+		if (@debug > 0) {
+			printf("INF[%s]: binding from non-kernel thread pid [%u] different than any monitored process, ignoring evt obj[%p],vm[%p],0x%016llx,%llu\n", probe, pid, args->obj, args->vm, args->offset, args->size);
+		}
+		return;
+	}
+
+	if (@debug > 0 && args->obj->userptr.notifier.mm != 0) {
+		@userptrs = @userptrs + 1;
+		printf("i915-memlog-dbg:userptr[%llu],%p,%llu\n", @userptrs, args->obj, args->size);
+	}
+
+	$rid = args->obj->mm.region->id;
+	if ($rid == 0 || $rid == 5) {
+		@smem = @smem + args->size;
+	} else {
+		@lmem = @lmem + args->size;
+	}
+	@binds[args->obj, args->vm, args->offset, args->size] = pid;
+
+	if (@debug > 0) {
+		if (args->size != @objs[args->obj]) {
+			printf("INF[%s]: different obj [%llu] and vma bind [%llu] sizes\n", probe, @objs[args->obj], args->size);
+		}
+
+		$rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
+		$vm = "ppgtt";
+		if (args->vm->is_ggtt) {
+			$vm = "ggtt";
+		} else if (args->vm->is_dpt) {
+			$vm = "dpt";
+		}
+		printf("i915-memlog-dbg:%llu:%llu[%llu]:vmabind,%p,%s[%u],vm[%p][%s],0x%016llx,%llu\n", nsecs, pid, tid, args->obj, $rs, $rid, args->vm, $vm, args->offset, args->size);
+	}
+}
+
+tracepoint:i915:i915_vma_unbind
+/@binds[args->obj, args->vm, args->offset, args->size]/
+{
+	$task = (struct task_struct *)curtask;
+	if (!@pids[pid] && $task->mm != 0) {
+		if (@debug > 0) {
+			printf("INF[%s]: unbinding from non-kernel thread pid [%u] different than any monitored process, ignoring evt obj[%p],vm[%p],0x%016llx,%llu\n", probe, pid, args->obj, args->vm, args->offset, args->size);
+		}
+		return;
+	}
+
+        delete(@binds[args->obj, args->vm, args->offset, args->size]);
+        $rid = args->obj->mm.region->id;
+        if ($rid == 0 || $rid == 5) {
+                @smem = @smem - args->size;
+        } else {
+                @lmem = @lmem - args->size;
+        }
+
+        if (@debug > 0) {
+                $rs = $rid == 0 || $rid == 5 ? "smem" : "lmem";
+                $vm = "ppgtt";
+                if (args->vm->is_ggtt) {
+                        $vm = "ggtt";
+                } else if (args->vm->is_dpt) {
+                        $vm = "dpt";
+                }
+                printf("i915-memlog-dbg:%llu:%llu[%llu]:vmaunbind,%p,%s[%u],vm[%p][%s],0x%016llx,%llu\n", nsecs, pid, tid, args->obj, $rs, $rid, args->vm, $vm, args->offset, args->size);
+        }
+}
+
+interval:ms:$2
+{
+	$now = nsecs;
+	if (@prev == 0) {
+		@acum = 0;
+	} else {
+		$ts = $now - @prev;
+		@acum = @acum + (int64) ($ts / 1000000);
+	}
+	printf("i915-memlog,%llu,%llu,%llu\n", @acum, @smem, @lmem);
+	@prev = $now;
+}
