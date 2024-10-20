@@ -24,7 +24,7 @@ fn main() -> Result<()> {
     let mut res: i32;
 
     unsafe {
-        res = libc::ioctl(fd, xe_drm::DRM_IOCTL_XE_DEVICE_QUERY, &dq);
+        res = libc::ioctl(fd, xe_drm::DRM_IOCTL_XE_DEVICE_QUERY, &mut dq);
     }
     println!("ioctl({:?}) = {:?}", dq, res);
 
@@ -37,7 +37,7 @@ fn main() -> Result<()> {
 
         dq.data = st as u64;
 
-        res = libc::ioctl(fd, xe_drm::DRM_IOCTL_XE_DEVICE_QUERY, &dq);
+        res = libc::ioctl(fd, xe_drm::DRM_IOCTL_XE_DEVICE_QUERY, &mut dq);
         let opts =  (*st).info.as_slice((*st).num_params as usize);
         println!("{:?}", opts);
     }
