@@ -124,7 +124,7 @@ fn main() -> Result<()> {
     unsafe {
         let layout = alloc::Layout::from_size_align(dqi.length as usize,
             mem::align_of::<u64>()).unwrap();
-        let mrg = alloc::alloc(layout) as *mut drm_i915_query_memory_regions;
+        let mrg = alloc::alloc_zeroed(layout) as *mut drm_i915_query_memory_regions;
 
         dqi.data_ptr = mrg as u64;
 
