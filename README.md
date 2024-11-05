@@ -4,3 +4,4 @@
 * fforks.bt   - track a process and all its children using sched tracepoints in bpftrace/ebpf.
 * lifetimes-rs - just playing with Rust and lifetimes.
 * ioctls-rs - playing with ioctls in Rust.
+* perf-rs - playing with perf in Rust.

@@ -1,0 +1,9 @@
+[package]
+name = "perf-rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.92"
+libc = "0.2.161"
+log = "0.4.22"
