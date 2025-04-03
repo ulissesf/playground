@@ -5,3 +5,4 @@
 * lifetimes-rs - just playing with Rust and lifetimes.
 * ioctls-rs - playing with ioctls in Rust.
 * perf-rs - playing with perf in Rust.
+* perf-py - playing with perf in Python.
