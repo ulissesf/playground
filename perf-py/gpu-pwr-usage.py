@@ -59,6 +59,11 @@ pwr_type = int(open("/sys/devices/power/type").readline().strip())
 gpu_energy_cfg = read_perf_config("/sys/devices/power/events/energy-gpu")
 gpu_energy_scale = float(open("/sys/devices/power/events/energy-gpu.scale").readline().strip())
 
+unit = open("/sys/devices/power/events/energy-gpu.unit").readline().strip()
+if unit != "Joules":
+    print("ERR: energy in \"%s\" (not Joules), aborting." % unit)
+    exit(1)
+
 fd = open_perf_event(pwr_type, gpu_energy_cfg)
 last_energy = read_perf_event(fd, 2)[1]  # discarding #evts
 last_update = time.monotonic()
