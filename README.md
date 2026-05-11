@@ -6,3 +6,4 @@
 * ioctls-rs - playing with ioctls in Rust.
 * perf-rs - playing with perf in Rust.
 * perf-py - playing with perf in Python.
+* pkg_temp - Intel CPU package temperature test via MSR
